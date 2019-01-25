@@ -117,30 +117,79 @@ def cal_undistort(img, objpoints, imgpoints):
 # In[7]:
 
 
-
+def order_points(pts):
+	# initialzie a list of coordinates that will be ordered
+	# such that the first entry in the list is the top-left,
+	# the second entry is the top-right, the third is the
+	# bottom-right, and the fourth is the bottom-left
+	rect = np.zeros((4, 2), dtype = "float32")
+ 
+	# the top-left point will have the smallest sum, whereas
+	# the bottom-right point will have the largest sum
+	s = pts.sum(axis = 1)
+	rect[0] = pts[np.argmin(s)]
+	rect[2] = pts[np.argmax(s)]
+ 
+	# now, compute the difference between the points, the
+	# top-right point will have the smallest difference,
+	# whereas the bottom-left will have the largest difference
+	diff = np.diff(pts, axis = 1)
+	rect[1] = pts[np.argmin(diff)]
+	rect[3] = pts[np.argmax(diff)]
+ 
+	# return the ordered coordinates
+	return rect
 
 nx = 9 # the number of inside corners in x
 ny = 6 # the number of inside corners in y
 
+src = np.array([[60,358],
+		[355, 259],
+		[533, 253],
+		[669, 272]], dtype='float32')
+
 img_size = (image.shape[1], image.shape[0])
+rect = order_points(src)
+(tl, tr, br, bl) = rect
 
-src = np.float32([[590,450],[687,450],[1100,720],[200,720]])
+# compute the width of the new image, which will be the
+# maximum distance between bottom-right and bottom-left
+# x-coordiates or the top-right and top-left x-coordinates
+widthA = np.sqrt(((br[0] - bl[0]) ** 2) + ((br[1] - bl[1]) ** 2))
+widthB = np.sqrt(((tr[0] - tl[0]) ** 2) + ((tr[1] - tl[1]) ** 2))
+maxWidth = max(int(widthA), int(widthB))
 
-dst = np.float32([[300,0],[900,0],[900,720],[300,720]])
+# compute the height of the new image, which will be the
+# maximum distance between the top-right and bottom-right
+# y-coordinates or the top-left and bottom-left y-coordinates
+heightA = np.sqrt(((tr[0] - br[0]) ** 2) + ((tr[1] - br[1]) ** 2))
+heightB = np.sqrt(((tl[0] - bl[0]) ** 2) + ((tl[1] - bl[1]) ** 2))
+maxHeight = max(int(heightA), int(heightB))
 
-M = cv2.getPerspectiveTransform(src, dst)
+# now that we have the dimensions of the new image, construct
+# the set of destination points to obtain a "birds eye view",
+# (i.e. top-down view) of the image, again specifying points
+# in the top-left, top-right, bottom-right, and bottom-left
+# order
+dst = np.array([
+		[0, 0],
+		[maxWidth - 1, 0],
+		[maxWidth - 1, maxHeight - 1],
+		[0, maxHeight - 1]], dtype = "float32")
+         
+M = cv2.getPerspectiveTransform(rect, dst)
 
-M_inverse = cv2.getPerspectiveTransform(dst, src)
+M_inverse = cv2.getPerspectiveTransform(dst, rect)
 
 
 # # In[8]:
 
 
-def warper(img, src, dst):
+def warper(img, rect, dst):
 
     # Compute and apply perpective transform
     img_size = (img.shape[1], img.shape[0])
-    M = cv2.getPerspectiveTransform(src, dst)
+    M = cv2.getPerspectiveTransform(rect, dst)
     warped = cv2.warpPerspective(img, M, img_size, flags=cv2.INTER_NEAREST)  # keep same size as input image
 
     return warped
@@ -151,7 +200,7 @@ def warper(img, src, dst):
 
 # binary_warped_images = []
 # for img in binary_image_array:
-#     warped_image = warper(img, src, dst)
+#     warped_image = warper(img, rect, dst)
 #     #warped_image_gray = cv2.cvtColor(warped_image,cv2.COLOR_BGR2GRAY)
 #     #plt.figure()
 #     #plt.imshow(warped_image, cmap='gray')
@@ -520,7 +569,7 @@ def process_image(image):
     color_binary = np.dstack(( np.zeros_like(sxbinary), sxbinary, s_binary)) * 255
     combined_binary = np.zeros_like(sxbinary)
     combined_binary[(s_binary == 1) | (sxbinary == 1)] = 1
-    warped_image = warper(combined_binary, src, dst)
+    warped_image = warper(combined_binary, rect, dst)
     #result = fit_polynomial(warped_image)
     #result = search_around_poly(warped_image)
     curvature_string, offset = radius_and_offset(warped_image)
